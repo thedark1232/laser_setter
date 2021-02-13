@@ -1,0 +1,261 @@
+--РОБОТ СЕТАЕТ ТЕРРУ ЛАЗЕРОМ ИЗ ИС2
+--движение прямо с вотока на запад со смещением на север(направо --> по ходу движения)
+--робот может прокапывать себе путь вперед любым предметом(ваджра, кирка, буры)
+component = require("component")
+robot = require("robot")
+term = require("term")
+computer = require("computer")
+--ПЕРЕМЕННЫЕ
+local start_x, start_y, start_z --начальный координаты робота
+local save_x, save_y, save_z --сохраняет координаты робота в поле
+local geo --компонент геоанализатор
+local navigate --компонент навигации
+local inv --компонент контроллера инвентаря
+local moveLibrary --библиотека движения робота
+local sizeLibrary --библиотке поворотов робота
+local energyChecker -- таблица энергии робота
+local max_west --максимальная длинна пути робота на запад
+local max_north_choose --максимальная длинна пути робота на север
+local instrument_name --название инструмента, который прокапывает роботу путь
+local laser_name = "IC2:itemToolMiningLaser" --название лазера из ис2 мода
+local wrench_name =  "OpenComputers:wrench" --название гаечного ключа
+local instrument_slot --зарезервированный слот под замену инструмента(лазер - кирка, кирка - лазер)
+local inv_size = robot.inventorySize() --размер инвентаря робота
+local up_or_down --отвечает за то, как робот будет сетать терру, над собой или под собой
+--ТАБЛИЦЫ
+--названия буров из ис2
+local table_drill = {["GraviSuite:advDDrill"] = "GraviSuite:advDDrill", ["IC2:itemToolDrill"] = "IC2:itemToolDrill", ["GraviSuite:vajra"] = "GraviSuite:vajra", ["IC2:itemToolDDrill"] = "IC2:itemToolDDrill", ["EMT:ThaumiumDrill"] = "EMT:ThaumiumDrill", ["EMT:DrillRockbreacker"] = "EMT:DrillRockbreacker"}
+local robot_set = {up = function() robot.useUp() end, down = function() robot.useDown() end}
+local components_and_librarys = {} --таблица проверки компонентов и библиотек перед загрузкой
+--ФУНКЦИИ
+--возвращает таблицу компонента при удачной загрузке(если этот компонент присутствует), при неудаче завершает работу программы
+function components_and_librarys.getComponent(name)
+	local arg1, arg2
+	local component_name = "return component." ..name
+	local func = load(component_name)
+	arg1, arg2 = pcall(func)
+	if arg1 then
+		return arg2
+	else
+		term.clear()
+		print("при поиске компонента: " ..name)
+		io.write("произошла ошибка: ")
+		print(arg2)
+		print("программа завершена")
+		os.exit()
+	end
+end
+--пробует загрузить библиотку, если библиотека не найдена, завершит работу программы
+function components_and_librarys.getLibrary(name)
+	local arg1, arg2
+	local library_name = "return require(\"" ..name.. "\")"
+	local func = load(library_name)
+	arg1, arg2 = pcall(func)
+	if arg1 then
+		return arg2
+	else
+		term.clear()
+		print("при поиске библиотеки: " ..name)
+		io.write("произошла ошибка: ")
+		print(arg2)
+		print("программа завершена")
+		os.exit()
+	end
+end
+--функция дебаг сообещий
+function deb_enter(what_text)
+	if what_text == nil then what_text = "имеет значение nil" end
+	print(what_text)
+	print("жми ентер для продолжения")
+	local lol_enter = io.read()
+end
+--переложить предмет из первого слота робота в любой другой
+function first_slot_transfer()
+	local table_slot
+	table_slot = inv.getStackInInternalSlot(1)
+	if table_slot ~= nil then
+	robot.select(1)
+		for i = 2,inv_size do
+			table_slot = inv.getStackInInternalSlot(i)
+			if table_slot == nil then
+				robot.transferTo(i)
+				return
+			end
+		end
+	else
+		return
+	end
+	::try_again1::
+	term.clear()
+	print("ВСЕ СЛОТЫ ИНВЕНТАРЯ РОБОТА ЗАНЯТЫ")
+	print("ПЕРЕЛОЖИ САМОСТОЯТЕЛЬНО ПРЕДМЕТ ИЗ ПЕРВОГО СЛОТА, В ЛЮБОЙ ДРУГОЙ")
+	print("И НАЖМИ ЕНТЕР")
+	computer.beep(1000, 5)
+	local enter = io.read()
+	table_slot = inv.getStackInInternalSlot(1)
+	if table_slot ~= nil then goto try_again1 end
+	term.clear()
+end
+--10 секундный таймер
+function weit_time_seconds(what_time)
+	computer.beep(1000, 0.2)
+	for i = what_time,1,-1 do
+		os.sleep(1)
+		print(i)
+	end
+end
+--найти иснутрумент в слоте робота(возвращает номер слота)
+function find_instrument_in_slot(name)
+	local inventory
+	for i = 1,inv_size do
+		inventory = inv.getStackInInternalSlot(i)
+		if inventory ~= nil then
+			if inventory.name == name then
+				return i
+			end
+		end
+	end
+	computer.beep(1000, 0.1); computer.beep(1000, 0.1); computer.beep(1000, 0.1); 
+	io.write("инструмент не найден: " ..name)
+	deb_enter("программу будет завершена")
+	os.exit()
+end
+--зарядка лазера и(или) ваджру на базе
+function charge_item_in_base()
+	inv.dropIntoSlot(0,1)
+	repeat until inv.getStackInSlot(0,1).charge > 290000
+	inv.suckFromSlot(0,1)
+	if table_drill[instrument_name] ~= nil then
+		inv.equip()
+		inv.dropIntoSlot(0,1)
+		repeat until inv.getStackInSlot(0,1).charge > 2900000
+		inv.suckFromSlot(0,1)
+		inv.equip()
+	end
+end
+--дропнуть все из инвентаря под робота(кроме кирки, лазера и гаечного ключа)
+local function drop_all_items()
+	for i = 1, robot.inventorySize() do
+		local item = inv.getStackInInternalSlot(i)
+		if item ~= nil then
+			if item.name ~= instrument_name then
+				if item.name ~= laser_name then
+					if item.name ~= wrench_name then
+						robot.select(i)
+						robot.drop()
+					end
+				end
+			end
+		end
+	end
+end
+--НАЧАЛО ПРОГРАММЫ
+do
+	--присводения компонентов переменым
+	navigate = components_and_librarys.getComponent("navigation")
+	inv = components_and_librarys.getComponent("inventory_controller")
+	geo = components_and_librarys.getComponent("geolyzer")
+	--загрузка библиотек
+	moveLibrary = components_and_librarys.getLibrary("moveLibrary")
+	sizeLibrary = components_and_librarys.getLibrary("sizeLibrary")
+	energyChecker = components_and_librarys.getLibrary("energyChecker")
+	--создание таблицы поворотов робота
+	term.clear()
+	print("ЗАПАДНОЕ НАПРАВЛЕНИЕ")
+	print("подсказки:")
+	
+	io.write("Максимальное расстояние движения на запад: ")
+	max_west = tonumber(io.read())
+	term.clear()
+	print("СЕВЕРНОЕ НАПРАВЛЕНИЕ:")
+	print("15 блоков == фулл чанк")
+	io.write("Максимальное расстояние движения на север: ")
+	max_north_choose = tonumber(io.read())
+	term.clear()
+	print("робот должен сетать над собой = 1, под собой = 2:")
+	local chouse = tonumber(io.read())
+	if chouse == 1 then up_or_down = "up"
+	elseif chouse == 2 then up_or_down = "down"
+	else print("неизвестная команда"); computer.beep(1000, 0.1); computer.beep(1000, 0.1); computer.beep(1000, 0.1); deb_enter("программа будет заверщена"); term.clear(); os.exit() end
+	
+	first_slot_transfer()
+	robot.select(1)
+	print("лазер должен находится в инвентаре робота в любом слоте")
+	print("положи в руку робота:")
+	deb_enter("любую кирку,любой бур или ваджру")
+	while true do --проверка имени инструмента в руке робота до начала программы
+		inv.equip()
+		local inv_pair = inv.getStackInInternalSlot(1)
+		if inv_pair ~= nil then
+			if inv_pair.name == laser_name then
+				inv.equip()
+				computer.beep(1000, 0.1); computer.beep(1000, 0.1); computer.beep(1000, 0.1)
+				term.clear()
+				print("при старте в руке робота должен быть один из следующих инструментов:")
+				print("любая кирка, любой бур, ваджра")
+			else
+				instrument_name = inv_pair.name
+				inv.equip()
+				break
+			end
+		end
+		print("ожидание до следующей проверки:")
+		weit_time_seconds(10)
+		term.clear()
+	end
+	term.clear()
+	instrument_slot = find_instrument_in_slot(laser_name) --находит слот с лазером
+	robot.select(instrument_slot)
+	robot.transferTo(1)
+	instrument_slot = 1
+	robot.select(1)
+	--запись стартовых координаты
+	start_x, start_z, start_y = navigate.getPosition()
+	sizeLibrary.turn_NSWE(4) --модрой на запад
+	robot.swing() --сломать блок перед собой перед началом циклов
+	
+	local min_north, step, max_north = 0, 1, max_north_choose
+	local north_move = true --движение на север
+--ГЛАНВЫЙ ЦИКЛ
+	for x = 1, max_west do
+		for y = min_north, max_north, step do
+			inv.equip()
+			robot_set[up_or_down]()
+			inv.equip()
+			moveLibrary.swing_and_move(start_x - x, start_y - y, start_z)
+			if inv.getStackInInternalSlot(1).charge < 10000 or energyChecker.how_much_enegry(5000) then
+				save_x, save_z, save_y = navigate.getPosition()
+				moveLibrary.swing_and_move(start_x, start_y, start_z)
+				energyChecker.check_energy_in_base()
+				moveLibrary.z_move(start_z + 1)
+				moveLibrary.x_y_move(start_x, start_y - 3)
+				charge_item_in_base()
+				moveLibrary.x_y_move(start_x, start_y)
+				moveLibrary.z_move(start_z)
+				moveLibrary.swing_and_move(save_x, save_y, save_z)
+			end
+		end
+		if north_move then --реверсивное движение робота, для экономии времени сета терры
+			north_move = false
+			min_north = max_north_choose
+			max_north = 0
+			step = step * -1	
+		else
+			north_move = true
+			min_north = 0
+			max_north = max_north_choose
+			step = math.abs(step)
+		end
+	end
+	inv.equip()
+	robot_set[up_or_down]()
+	inv.equip()
+	term.clear()
+	print("робот дошел до конца цикла")
+	sizeLibrary.turn_NSWE(5) --модрой на восток
+	drop_all_items() --выбрасывает все из инвентаря, кроме гаечного ключа из os мода, кирки и лазера
+	moveLibrary.swing_and_move(start_x, start_y, start_z)
+	term.clear()
+	computer.beep(1000, 0.1); computer.beep(1000, 0.1); computer.beep(1000, 0.1)
+	print("РАСКОПКИ ЗАВЕРШЕНЫ")
+end
