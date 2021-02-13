@@ -1,0 +1,25 @@
+local filesystem = require "filesystem"
+local component = require "component"
+local robot = require "robot"
+
+local librarys = {["energyChecker"] = {"/usr/lib/energyChecker.lua", "https://raw.githubusercontent.com/thedark1232/builder/main/energyChecker"},
+				  ["sizeLibrary"] = {"/usr/lib/sizeLibrary.lua", "https://raw.githubusercontent.com/thedark1232/builder/main/sizeLibrary"},
+				  ["moveLibrary"] = {"/usr/lib/moveLibrary.lua", "https://raw.githubusercontent.com/thedark1232/builder/main/moveLibrary"},
+				  ["return"] = {"/home/return", "https://raw.githubusercontent.com/thedark1232/builder/main/return"},
+				  ["terraSetter"] = {"/home/setter", "https://raw.githubusercontent.com/thedark1232/laser_setter/main/main_programm"}
+				}
+
+--дебаг, нажать энтер для продолжения
+function deb_enter(what_text)
+	if what_text ~= nil then print(what_text) end
+	print("жми ентер для продолжения")
+	local lol_enter = io.read()
+end
+
+do
+	filesystem.makeDirectory("/usr/lib/")
+	for k, v in pairs(librarys) do
+		filesystem.remove(v[1]) --удаление устаревшей программы
+		os.execute("wget " ..v[2].. " " ..v[1]) --запись новых программ
+	end --запись новых программ
+end
