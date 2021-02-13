@@ -11,10 +11,11 @@ local save_x, save_y, save_z --сохраняет координаты робо�
 local geo --компонент геоанализатор
 local navigate --компонент навигации
 local inv --компонент контроллера инвентаря
+local file_name_min_x = "robot_max_x.lua" --значение для создаваемого файла меняется здесь(в других местах кода менять не надо)
 local moveLibrary --библиотека движения робота
 local sizeLibrary --библиотке поворотов робота
 local energyChecker -- таблица энергии робота
-local max_west --максимальная длинна пути робота на запад
+local min_west, max_west --максимальная длинна пути робота на запад
 local max_north_choose --максимальная длинна пути робота на север
 local instrument_name --название инструмента, который прокапывает роботу путь
 local laser_name = "IC2:itemToolMiningLaser" --название лазера из ис2 мода
@@ -149,6 +150,53 @@ local function drop_all_items()
 		end
 	end
 end
+--сохранение позиции робота по х координате
+function coordinat_saver()
+	local file_name = file_name_min_x
+	local min_x_position = 0
+	--открыть файл в режиме чтения
+	local file_p = io.open(file_name,"r")
+	if file_p == nil then --ФАЙЛ НЕ СУЩЕСТВУЕТ
+		file_p = io.open(file_name,"w") --создать файл в режиме записи
+		--запись параметров в файл
+		print("предыдущее значение = 0")
+		print("-----------------------")
+		print("запись нового значения:")
+		min_x_position = pcall_return_num(0, 500)
+		file_p:write(min_x_position)
+		file_p:close(); return min_x_position
+	else --ФАЙЛ СУЩЕСТВУЕТ
+		local r = file_p:read()
+		if r == nil then --ФАЙЛ ПУСТОЙ
+			file_p:close()
+			file_p = io.open(file_name,"w") --создать файл в режиме записи
+			print("предыдущее значение = 0")
+			print("-----------------------")
+			print("запись нового значения:")
+			min_x_position = pcall_return_num(0, 500)
+			file_p:write(min_x_position)
+			file_p:close(); return min_x_position
+		else --В ФАЙЛЕ ЕСТЬ ДАННЫЕ
+			print("предыдущее значение = " .. r)
+			print("-----------------------")
+			print("запись нового значения:")
+			min_x_position = pcall_return_num(0, 500)
+			file_p:close()
+			file_p = io.open(file_name,"w") --создать файл в режиме записи
+			file_p:write(min_x_position)
+			file_p:close(); return min_x_position
+		end
+	end
+end
+--ввод цифры с проверками(минимальное значение, максимальное значение)
+function pcall_return_num(min_num, max_num)
+	::again_choose::
+	io.write("ввод числа -> ")
+	local number = tonumber(io.read()) or 0
+	if number == nil then print("ошибка ввода. "); computer.beep(1000,1); goto again_choose end
+	if number < min_num or number > max_num then io.write("ошибка ввода. "); computer.beep(1000,1); goto again_choose end
+	return number
+end
 --НАЧАЛО ПРОГРАММЫ
 do
 	--присводения компонентов переменым
@@ -159,18 +207,20 @@ do
 	moveLibrary = components_and_librarys.getLibrary("moveLibrary")
 	sizeLibrary = components_and_librarys.getLibrary("sizeLibrary")
 	energyChecker = components_and_librarys.getLibrary("energyChecker")
-	--создание таблицы поворотов робота
+	term.clear()
+	print("С КАКОГО РАССТОЯНИЕ ОТ РОБОТА НАЧАТЬ?")
+	print("минимальное значение = 0")
+	min_west = coordinat_saver()
 	term.clear()
 	print("ЗАПАДНОЕ НАПРАВЛЕНИЕ")
-	print("подсказки:")
-	
+	print("15 блоков == 1 чанк")
 	io.write("Максимальное расстояние движения на запад: ")
-	max_west = tonumber(io.read())
+	max_west = pcall_return_num(min_west, 500 + min_west)
 	term.clear()
 	print("СЕВЕРНОЕ НАПРАВЛЕНИЕ:")
-	print("15 блоков == фулл чанк")
+	print("15 блоков == 1 чанк")
 	io.write("Максимальное расстояние движения на север: ")
-	max_north_choose = tonumber(io.read())
+	max_north_choose = pcall_return_num(0, 500)
 	term.clear()
 	print("робот должен сетать над собой = 1, под собой = 2:")
 	local chouse = tonumber(io.read())
@@ -213,11 +263,11 @@ do
 	start_x, start_z, start_y = navigate.getPosition()
 	sizeLibrary.turn_NSWE(4) --модрой на запад
 	robot.swing() --сломать блок перед собой перед началом циклов
-	
+	moveLibrary.swing_and_move(start_x - min_west, start_y, start_z) --выдвижение на минимальную поцицию по западному направлению (х)
 	local min_north, step, max_north = 0, 1, max_north_choose
 	local north_move = true --движение на север
---ГЛАНВЫЙ ЦИКЛ
-	for x = 1, max_west do
+--------------------------------------------------ГЛАНВЫЙ ЦИКЛ---------------------------------------------------
+	for x = min_west, max_west do
 		for y = min_north, max_north, step do
 			inv.equip()
 			robot_set[up_or_down]()
@@ -228,7 +278,7 @@ do
 				moveLibrary.swing_and_move(start_x, start_y, start_z)
 				energyChecker.check_energy_in_base()
 				moveLibrary.z_move(start_z + 1)
-				moveLibrary.x_y_move(start_x, start_y - 3)
+				moveLibrary.x_y_move(start_x, start_y - 2)
 				charge_item_in_base()
 				moveLibrary.x_y_move(start_x, start_y)
 				moveLibrary.z_move(start_z)
@@ -246,6 +296,9 @@ do
 			max_north = max_north_choose
 			step = math.abs(step)
 		end
+		file_p = io.open(file_name_min_x, "w") --создать файл в режиме записи координат по оси х (западное направление)
+		file_p:write(min_west)
+		file_p:close()
 	end
 	inv.equip()
 	robot_set[up_or_down]()
