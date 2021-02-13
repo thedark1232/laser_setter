@@ -278,7 +278,7 @@ do
 				moveLibrary.swing_and_move(start_x, start_y, start_z)
 				energyChecker.check_energy_in_base()
 				moveLibrary.z_move(start_z + 1)
-				moveLibrary.x_y_move(start_x, start_y - 2)
+				moveLibrary.x_y_move(start_x + 1, start_y - 2)
 				charge_item_in_base()
 				moveLibrary.x_y_move(start_x, start_y)
 				moveLibrary.z_move(start_z)
