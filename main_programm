@@ -11,6 +11,7 @@ local save_x, save_y, save_z --сохраняет координаты робо�
 local geo --компонент геоанализатор
 local navigate --компонент навигации
 local inv --компонент контроллера инвентаря
+local modem, modem_is_avalible --компонент модема
 local file_name_min_x = "robot_max_x.lua" --значение для создаваемого файла меняется здесь(в других местах кода менять не надо)
 local moveLibrary --библиотека движения робота
 local sizeLibrary --библиотке поворотов робота
@@ -25,10 +26,11 @@ local inv_size = robot.inventorySize() --размер инвентаря роб�
 local up_or_down --отвечает за то, как робот будет сетать терру, над собой или под собой
 --ТАБЛИЦЫ
 --названия буров из ис2
-local table_drill = {["GraviSuite:advDDrill"] = "GraviSuite:advDDrill", ["IC2:itemToolDrill"] = "IC2:itemToolDrill", ["GraviSuite:vajra"] = "GraviSuite:vajra", ["IC2:itemToolDDrill"] = "IC2:itemToolDDrill", ["EMT:ThaumiumDrill"] = "EMT:ThaumiumDrill", ["EMT:DrillRockbreacker"] = "EMT:DrillRockbreacker"}
+local table_drill = {["GraviSuite:advDDrill"] = "GraviSuite:advDDrill", ["IC2:itemToolDrill"] = "IC2:itemToolDrill", ["GraviSuite:vajra"] = 2900000, ["IC2:itemToolDDrill"] = "IC2:itemToolDDrill", ["EMT:ThaumiumDrill"] = "EMT:ThaumiumDrill", ["EMT:DrillRockbreacker"] = "EMT:DrillRockbreacker"}
 local robot_set = {up = function() robot.useUp() end, down = function() robot.useDown() end}
 local components_and_librarys = {} --таблица проверки компонентов и библиотек перед загрузкой
 --ФУНКЦИИ
+--возвращает таблицу компонента при удачной загрузке(если этот компонент присутствует), при неудаче завершает работу программы
 --возвращает таблицу компонента при удачной загрузке(если этот компонент присутствует), при неудаче завершает работу программы
 function components_and_librarys.getComponent(name)
 	local arg1, arg2
@@ -36,14 +38,19 @@ function components_and_librarys.getComponent(name)
 	local func = load(component_name)
 	arg1, arg2 = pcall(func)
 	if arg1 then
-		return arg2
+		print(name .. " ...загружено")
+		return arg2		
 	else
-		term.clear()
-		print("при поиске компонента: " ..name)
-		io.write("произошла ошибка: ")
-		print(arg2)
-		print("программа завершена")
-		os.exit()
+		if name == "modem" then
+			return
+		else
+			term.clear()
+			print("при поиске компонента: " ..name)
+			io.write("произошла ошибка: ")
+			print(arg2)
+			print("программа завершена")
+			os.exit()
+		end
 	end
 end
 --пробует загрузить библиотку, если библиотека не найдена, завершит работу программы
@@ -129,7 +136,7 @@ function charge_item_in_base()
 	if table_drill[instrument_name] ~= nil then
 		inv.equip()
 		inv.dropIntoSlot(0,1)
-		repeat until inv.getStackInSlot(0,1).charge > 2900000
+		repeat until inv.getStackInSlot(0,1).charge > inv.getStackInSlot(0,1).maxCharge - 2000
 		inv.suckFromSlot(0,1)
 		inv.equip()
 	end
@@ -197,23 +204,138 @@ function pcall_return_num(min_num, max_num)
 	if number < min_num or number > max_num then io.write("ошибка ввода. "); computer.beep(1000,1); goto again_choose end
 	return number
 end
---НАЧАЛО ПРОГРАММЫ
+--фунция перезаписи файла первоначальных координат
+function creat_file()
+	file = io.open("MyCoords","w")
+	local x,z,y = navigate.getPosition()
+	file:write(x.."\n"); file:write(y.."\n"); file:write(z.."\n")
+	file:close()
+end
+--очистить область экрана
+function clear_input_window(x, y, lenght)
+	term.setCursor(x, y)
+	x = lenght - x
+	for i = 1, x do
+		io.write(" ")
+	end
+end
+--открывает стартовое меню
+function open_main_menu()
+	local my_x, my_z, my_y
+	::try_again5::
+	local multiplier = 1 --множитель передвижения робота по чанкам (работает только по N,S,W,E)
+	my_x, my_z, my_y = navigate.getPosition()
+	if my_x == nil or my_y == nil or my_z == nil then
+		term.clear();
+		computer.beep(400, 0.1)
+		print("одно из направлений по навигации не определено")
+		print("совмести навигацию с новой картой")
+		os.exit()
+	end
+	                           --▀ █ ▄--
+	print("█▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ГЛАВНОЕ МЕНЮ:▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀█")
+	print("█ 0 - выход из программы                         █")
+	print("█ 1 - начать терраформирование                   █")
+	print("█ 12 - место для вашей рекламы                   █")
+	print("█▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█")
+	print("█ передвинуть робота на: █                       █")
+	print("█ 2 - СЕВЕР              █                       █")
+	print("█ 3 - ЮГ                 █                       █")
+	print("█ 4 - ЗАПАД              █                       █")
+	print("█ 5 - ВОСТОК             █                       █")
+	print("█ 6 - СЕВЕРО-ЗАПАД       █                       █")
+	print("█ 7 - СЕВЕРО-ВОСТОК      █                       █")
+	print("█ 8 - ЮГО-ЗАПАД          █                       █")
+	print("█ 9 - ЮГО-ВОСТОК         █▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀█")
+	print("█ 10 - движение по Z     █                       █")
+	io.write("█▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█")
+	if modem_is_avalible then --если компонент беспроводной сети вставлен в робота
+		modem_robot_port = tonumber(filesLibrary.write_file("robot_port_number", 0)) --второй аргумент, значение возвращаемое по умолчанию, если файл не найден
+		modem_comp_port = tonumber(filesLibrary.write_file("comp_port_number", 0)) --второй аргумент, значение возвращаемое по умолчанию, если файл не найден
+		term.setCursor(30, 6);  io.write("МОДЕМ: ONLINE")
+		term.setCursor(27, 7);  io.write("порт робота: " .. tostring(modem_robot_port))
+		term.setCursor(27, 8);  io.write("порт компа: " .. tostring(modem_comp_port))
+		term.setCursor(31, 9);  io.write("СМЕНА ПОРТОВ: ")
+		term.setCursor(27, 10); io.write("20 - робота")
+		term.setCursor(27, 11); io.write("21 - компа")
+	else
+		term.setCursor(30, 9); io.write("МОДЕМ: OFFLINE")
+	end
+	clear_input_window(28, 15, 22)
+	term.setCursor(28, 15)
+	io.write("ВВОД -> ")
+	local chose_num = tonumber(io.read())
+	if chose_num == nil then term.clear(); computer.beep(1000, 0.1); computer.beep(1000, 0.1); deb_enter("введена неизвестная команда"); term.clear(); goto try_again5
+	elseif chose_num == 0 then term.clear(); computer.beep(1000, 0.1); computer.beep(1000, 0.1); print("программа завершена"); os.exit()
+	elseif chose_num == 1 then term.clear(); scheme_menu()
+	elseif chose_num == 2 then local mult1 = multi(); moveLibrary.swing_and_move(my_x, my_y, my_z + 1); moveLibrary.swing_and_move(my_x, my_y - mult1, my_z); term.clear(); creat_file(); goto try_again5
+	elseif chose_num == 3 then local mult2 = multi(); moveLibrary.swing_and_move(my_x, my_y, my_z + 1); moveLibrary.swing_and_move(my_x, my_y + mult2, my_z); term.clear(); creat_file(); goto try_again5
+	elseif chose_num == 4 then local mult3 = multi(); moveLibrary.swing_and_move(my_x, my_y, my_z + 1); moveLibrary.swing_and_move(my_x - mult3, my_y, my_z); term.clear(); creat_file(); goto try_again5
+	elseif chose_num == 5 then local mult4 = multi(); moveLibrary.swing_and_move(my_x, my_y, my_z + 1); moveLibrary.swing_and_move(my_x + mult4, my_y, my_z); term.clear(); creat_file(); goto try_again5
+	elseif chose_num == 6 then moveLibrary.swing_and_move(my_x, my_y, my_z + 1); moveLibrary.swing_and_move(my_x - 16, my_y - 16, my_z); term.clear(); creat_file(); goto try_again5
+	elseif chose_num == 7 then moveLibrary.swing_and_move(my_x, my_y, my_z + 1); moveLibrary.swing_and_move(my_x + 16, my_y - 16, my_z); term.clear(); creat_file(); goto try_again5
+	elseif chose_num == 8 then moveLibrary.swing_and_move(my_x, my_y, my_z + 1); moveLibrary.swing_and_move(my_x - 16, my_y + 16, my_z); term.clear(); creat_file(); goto try_again5
+	elseif chose_num == 9 then moveLibrary.swing_and_move(my_x, my_y, my_z + 1); moveLibrary.swing_and_move(my_x + 16, my_y + 16, my_z); term.clear(); creat_file(); goto try_again5
+	elseif chose_num == 10 then
+		term.clear()
+		print("отрицательно число двигает робота ниже, положительное выше")
+		::must_do_again::
+		print("--------------")
+		io.write("введи число -> ")	
+		local z_num = tonumber(io.read())
+		if z_num == nil then term.clear(); computer.beep(1000, 0.1); print("НЕ КОРРЕКТНОЕ ЧИСЛО"); goto must_do_again end
+		moveLibrary.swing_and_move(my_x, my_y, my_z + z_num); creat_file()
+		goto try_again5
+	elseif chose_num == 12 then
+		goto try_again5
+	elseif chose_num == 20 then --смена порта робота
+		clear_input_window(28, 15, 22); term.setCursor(28, 15); filesLibrary.creat_file("robot_port_number", pcall_return_num(1, 65535))
+		goto try_again5
+	elseif chose_num == 21 then --смена порта компа
+		clear_input_window(28, 15, 22); term.setCursor(28, 15); filesLibrary.creat_file("comp_port_number", pcall_return_num(1, 65535))
+		goto try_again5
+	else
+		goto try_again5
+	end
+end
+--посчитать множитель по чанкам
+function multi()
+	term.clear()
+	print("на сколько чанков двигаемся?")
+	::must_do_again2::
+	print("--------------")
+	io.write("введи число -> ")	
+	local num = tonumber(io.read())
+	if num == nil then term.clear(); computer.beep(1000, 0.1); print("НЕ КОРРЕКТНОЕ ЧИСЛО"); goto must_do_again2 end
+	return 16 * num
+end
+--------------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------НАЧАЛО ПРОГРАММЫ---------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------------------------------------
 do
 	--присводения компонентов переменым
 	navigate = components_and_librarys.getComponent("navigation")
 	inv = components_and_librarys.getComponent("inventory_controller")
 	geo = components_and_librarys.getComponent("geolyzer")
+	modem = components_and_librarys.getComponent("modem")
+	if modem == nil then modem_is_avalible = false else modem_is_avalible = true end --определение доступности модема
 	--загрузка библиотек
 	moveLibrary = components_and_librarys.getLibrary("moveLibrary")
 	sizeLibrary = components_and_librarys.getLibrary("sizeLibrary")
 	energyChecker = components_and_librarys.getLibrary("energyChecker")
+	term.clear()
+	open_start_menu()
 	term.clear()
 	print("С КАКОГО РАССТОЯНИЕ ОТ РОБОТА НАЧАТЬ?")
 	print("минимальное значение = 0")
 	min_west = coordinat_saver()
 	term.clear()
 	print("ЗАПАДНОЕ НАПРАВЛЕНИЕ")
-	print("15 блоков == 1 чанк")
+	print("15 == 1 чанк")
+	print("31 == 2 чанка")
+	print("47 == 3 чанка")
+	print("63 == 4 чанка")
+	print("79 == 5 чанков")
 	io.write("Максимальное расстояние движения на запад: ")
 	max_west = pcall_return_num(min_west, 500 + min_west)
 	term.clear()
@@ -269,10 +391,6 @@ do
 --------------------------------------------------ГЛАНВЫЙ ЦИКЛ---------------------------------------------------
 	for x = min_west, max_west do
 		for y = min_north, max_north, step do
-			inv.equip()
-			robot_set[up_or_down]()
-			inv.equip()
-			moveLibrary.swing_and_move(start_x - x, start_y - y, start_z)
 			if inv.getStackInInternalSlot(1).charge < 10000 or energyChecker.how_much_enegry(5000) then
 				save_x, save_z, save_y = navigate.getPosition()
 				moveLibrary.swing_and_move(start_x, start_y, start_z)
@@ -284,6 +402,10 @@ do
 				moveLibrary.z_move(start_z)
 				moveLibrary.swing_and_move(save_x, save_y, save_z)
 			end
+			inv.equip()
+			robot_set[up_or_down]()
+			inv.equip()
+			moveLibrary.swing_and_move(start_x - x, start_y - y, start_z)
 		end
 		if north_move then --реверсивное движение робота, для экономии времени сета терры
 			north_move = false
@@ -296,9 +418,9 @@ do
 			max_north = max_north_choose
 			step = math.abs(step)
 		end
-		file_p = io.open(file_name_min_x, "w") --создать файл в режиме записи координат по оси х (западное направление)
-		file_p:write(min_west)
-		file_p:close()
+		local file_west = io.open(file_name_min_x, "w") --создать файл в режиме записи координат по оси х (западное направление)
+		file_west:write(x)
+		file_west:close()
 	end
 	inv.equip()
 	robot_set[up_or_down]()
