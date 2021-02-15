@@ -5,6 +5,7 @@ component = require("component")
 robot = require("robot")
 term = require("term")
 computer = require("computer")
+
 --ПЕРЕМЕННЫЕ
 local start_x, start_y, start_z --начальный координаты робота
 local save_x, save_y, save_z --сохраняет координаты робота в поле
@@ -16,6 +17,7 @@ local file_name_min_x = "robot_max_x.lua" --значение для создав
 local moveLibrary --библиотека движения робота
 local sizeLibrary --библиотке поворотов робота
 local energyChecker -- таблица энергии робота
+local filesLibrary
 local min_west, max_west --максимальная длинна пути робота на запад
 local max_north_choose --максимальная длинна пути робота на север
 local instrument_name --название инструмента, который прокапывает роботу путь
@@ -220,7 +222,7 @@ function clear_input_window(x, y, lenght)
 	end
 end
 --открывает стартовое меню
-function open_main_menu()
+function open_start_menu()
 	local my_x, my_z, my_y
 	::try_again5::
 	local multiplier = 1 --множитель передвижения робота по чанкам (работает только по N,S,W,E)
@@ -323,6 +325,7 @@ do
 	moveLibrary = components_and_librarys.getLibrary("moveLibrary")
 	sizeLibrary = components_and_librarys.getLibrary("sizeLibrary")
 	energyChecker = components_and_librarys.getLibrary("energyChecker")
+	filesLibrary =  components_and_librarys.getLibrary("filesLibrary")
 	term.clear()
 	open_start_menu()
 	term.clear()
