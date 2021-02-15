@@ -7,7 +7,7 @@ local librarys = {["energyChecker"] = {"/usr/lib/energyChecker.lua", "https://ra
 				  ["moveLibrary"] = {"/usr/lib/moveLibrary.lua", "https://raw.githubusercontent.com/thedark1232/builder/main/moveLibrary"},
 				  ["return"] = {"/home/return", "https://raw.githubusercontent.com/thedark1232/builder/main/return"},
 				  ["terraSetter"] = {"/home/setter", "https://raw.githubusercontent.com/thedark1232/laser_setter/main/main_programm"},
-				  ["filesLibrary"] = {"/usr/lib/filesLibrary", "https://raw.githubusercontent.com/thedark1232/builder/main/filesLibrary"}
+				  ["filesLibrary"] = {"/usr/lib/filesLibrary.lua", "https://raw.githubusercontent.com/thedark1232/builder/main/filesLibrary"}
 				}
 
 --дебаг, нажать энтер для продолжения
